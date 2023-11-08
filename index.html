@@ -5,8 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Play Video From OS</title>
     <link rel="icon" href="data:," />
-    <script>
-      async function getFile() {
+    <script type="module">
+      import {
+        get,
+        set,
+        entries,
+      } from "https://unpkg.com/idb-keyval@5.0.2/dist/esm/index.js"
+
+      async function getVideo() {
         try {
           // Opções para permitir apenas seleção de vídeos
           const options = {
@@ -22,35 +28,86 @@
 
           // Isto abrirá o seletor de arquivos
           const [fileHandle] = await window.showOpenFilePicker(options)
-          return fileHandle
+          return await fileHandle.getFile()
         } catch (e) {
           console.error(e)
           // O usuário cancelou a seleção do arquivo ou ocorreu um erro
         }
       }
 
-      async function readFile(fileHandle) {
-        const file = await fileHandle.getFile()
-        return file
+      async function getPastaVideos() {
+        try {
+          const dirHandle = await window.showDirectoryPicker()
+          const promises = []
+          for await (const entry of dirHandle.values()) {
+            if (!entry.name.endsWith("mp4")) continue
+            promises.push(entry.getFile().then((file) => file))
+          }
+          return await Promise.all(promises)
+        } catch (e) {
+          console.error(e)
+        }
       }
 
       async function playVideo(file) {
-        console.log(file)
         const videoUrl = URL.createObjectURL(file)
-        console.log(`url: ${videoUrl}`)
         const videoElement = document.querySelector("#loaded-video")
         videoElement.src = videoUrl
         videoElement.controls = true
         videoElement.play()
       }
 
-      async function pickAndPlayVideo() {
-        const fileHandle = await getFile()
-        if (fileHandle) {
-          const file = await readFile(fileHandle)
-          await playVideo(file)
-        }
+      async function carregaVideos() {
+        const fileHandleOrUndefined = await entries()
+        if (!fileHandleOrUndefined) return
+
+        const selectInput = document.querySelector("select")
+        selectInput.innerHTML = ""
+        fileHandleOrUndefined.forEach((file) => {
+          let [nome, url] = file
+
+          let optionInput = document.createElement("option")
+          optionInput.value = nome
+          optionInput.text = nome
+          selectInput.appendChild(optionInput)
+        })
       }
+
+      async function pickPasta() {
+        const videos = await getPastaVideos()
+        videos.forEach(async (video) => {
+          // const videoUrl = URL.createObjectURL(video)
+          await set(video.name, video)
+        })
+        await carregaVideos()
+      }
+
+      async function pickVideo() {
+        const video = await getVideo()
+        await set(video.name, video)
+        await carregaVideos()
+      }
+
+      async function playVideoFromSelect() {
+        const selectInput = document.querySelector("select")
+        const valorInput = await get(selectInput.value)
+        if (!valorInput) return
+        await playVideo(valorInput)
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        carregaVideos()
+        document
+          .getElementById("btnPickPasta")
+          .addEventListener("click", pickPasta)
+        document
+          .getElementById("btnPickVideo")
+          .addEventListener("click", pickVideo)
+
+        document
+          .getElementById("playVideo")
+          .addEventListener("click", playVideoFromSelect)
+      })
     </script>
   </head>
   <body
@@ -61,20 +118,24 @@
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      gap: 12px;
     "
   >
     <video
       src=""
       id="loaded-video"
-      style="width: 600px; background-color: rgb(73, 73, 73)"
+      style="
+        width: 600px;
+        background-color: rgb(73, 73, 73);
+        margin-bottom: 16px;
+      "
     ></video>
-    <button id="btnPickVideo">Escolher e Reproduzir Vídeo</button>
-    <script>
-      // JavaScript para acionar a função pickAndPlayVideo
-      document
-        .getElementById("btnPickVideo")
-        .addEventListener("click", pickAndPlayVideo)
-    </script>
+    <div style="display: flex; gap: 4px">
+      <button id="btnPickVideo">Escolher Vídeo</button>
+      <button id="btnPickPasta">Escolher Pasta</button>
+    </div>
+    <div style="display: flex; gap: 4px; margin-top: 12px">
+      <select></select>
+      <button id="playVideo">Reproduzir Vídeo</button>
+    </div>
   </body>
 </html>
